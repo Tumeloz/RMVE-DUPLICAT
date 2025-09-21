@@ -1,27 +1,30 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 
-TOKEN = "8113723791:AAHHldi8i5D6YTPwweojLE1gdqfCnXXVmoA"
+TOKEN = os.getenv("TOKEN")  # safer than hardcoding
 
-def start(update, context):
-    update.message.reply_text("📄 Send me a .txt file and I’ll remove duplicates for you.")
+# Start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📄 Send me a .txt file and I’ll remove duplicates for you.")
 
-def handle_document(update, context):
+# Handle txt documents
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
 
     if not doc.file_name.endswith(".txt"):
-        update.message.reply_text("❌ Please send a valid .txt file.")
+        await update.message.reply_text("❌ Please send a valid .txt file.")
         return
 
-    # Download the file
+    # Download file
     original_name = doc.file_name
     base_name = os.path.splitext(original_name)[0]
-    cleaned_name = f"{base_name}.txt"
+    cleaned_name = f"{base_name}_cleaned.txt"
 
-    file = doc.get_file()
-    file.download(original_name)
+    file = await doc.get_file()
+    await file.download_to_drive(original_name)
 
-    # Read, deduplicate, and write output
+    # Read, deduplicate, and write
     with open(original_name, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
@@ -30,25 +33,29 @@ def handle_document(update, context):
     with open(cleaned_name, "w", encoding="utf-8") as f:
         f.write("\n".join(cleaned))
 
-    # Send back the cleaned file
+    # Send back cleaned file
     with open(cleaned_name, "rb") as f:
-        context.bot.send_document(chat_id=update.effective_chat.id, document=f, filename=cleaned_name)
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=f,
+            filename=cleaned_name
+        )
 
-    update.message.reply_text(f"✅ Done! Duplicates removed. File: `{cleaned_name}`", parse_mode='Markdown')
+    await update.message.reply_text(f"✅ Done! Duplicates removed. File: `{cleaned_name}`", parse_mode='Markdown')
 
-    # Cleanup temp files
+    # Cleanup
     os.remove(original_name)
     os.remove(cleaned_name)
 
+# Main
 def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app = Application.builder().token(TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.document.mime_type("text/plain"), handle_document))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Document.MimeType("text/plain"), handle_document))
 
-    updater.start_polling()
-    updater.idle()
+    print("🚀 Bot is running...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
